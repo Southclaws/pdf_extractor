@@ -1,0 +1,3 @@
+include README.md
+include doc_worker
+include page_worker

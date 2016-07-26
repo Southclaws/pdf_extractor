@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+import argparse
+import logging
+import os
+import io
+import subprocess
+
+
+class OCR():
+	def __init__(self, filename, page, loglevel, disk):
+		self.initialised = False
+
+		if loglevel != "NONE":
+			logging.basicConfig(filename="pdf_extractor.log", level=getattr(logging, loglevel.upper()))
+
+		self.filename = filename
+		self.page = page
+		self.disk = disk
+
+		self.workingdir = os.path.splitext(filename)[0].replace(" ", "_")
+		self.output = os.path.splitext(filename)[0].replace(" ", "_") + '.txt'
+
+		self.text = ""
+
+		if self.disk:
+			os.makedirs(self.workingdir, exist_ok=True)
+			logging.info(self.workingdir)
+
+		self.initialised = True
+
+	def start(self):
+		if not self.initialised:
+			logging.error("OCR not initialised, cannot run")
+			return
+
+		if self.disk:
+			self.page_to_image()
+			self.recognise_images()
+
+		else:
+			self.recognise_page()
+
+	def page_to_image(self):
+		logging.info("page_to_image")
+
+		subprocess.call([
+			"gs",
+			"-dFirstPage=%d" % (self.page),
+			"-dLastPage=%d" % (self.page),
+			"-dNOGC",
+			"-dQUIET",
+			"-dBandHeight=100",
+			"-dBandBufferSpace=500000000",
+			"-dBufferSpace=1000000000",
+			"-sBandListStorage=memory",
+			"-dNumRenderingThreads=2",
+			"-sDEVICE=jpeg",
+			"-r300",
+			"-o", os.path.join(self.workingdir, "page%04d.jpg" % (self.page)),
+			"-f", self.filename])
+
+	def recognise_images(self):
+		logging.info("recognise_images")
+
+		self.text = subprocess.check_output([
+			"tesseract",
+			os.path.join(self.workingdir, "page%04d.jpg" % (self.page)),
+			"stdout",
+			"-psm=1"
+		]).decode('utf-8').strip("\n")
+
+	def recognise_page(self):
+		logging.info("recognise_page")
+
+		image_extractor = subprocess.Popen([
+			"gs",
+			"-dFirstPage=%d" % (self.page),
+			"-dLastPage=%d" % (self.page),
+			"-dNOGC",
+			"-dQUIET",
+			"-dBandHeight=100",
+			"-dBandBufferSpace=500000000",
+			"-dBufferSpace=1000000000",
+			"-sBandListStorage=memory",
+			"-dNumRenderingThreads=2",
+			"-sDEVICE=jpeg",
+			"-r300",
+			"-o", "-",
+			self.filename], stdout=subprocess.PIPE)
+
+		self.text = subprocess.check_output([
+			"tesseract",
+			"stdin",
+			"stdout",
+			"-psm=1"
+		], stdin=image_extractor.stdout).decode('utf-8')
+
+	def save_text(self):
+		logging.info("save_text %d lines", len(self.text))
+		with io.open(self.output, 'w') as f:
+			f.write(self.text + '\n')
+
+
+def main():
+	parser = argparse.ArgumentParser(description='Run OCR on PDF files.')
+	parser.add_argument('pdf', type=str, help='PDF file to process')
+	parser.add_argument('page', type=int, help='page to process')
+	parser.add_argument('-o', '--out', type=str, default="stdout", help='file|stdout')
+	parser.add_argument("-l", "--loglevel", default="NONE", help="set logging level")
+	parser.add_argument("-d", "--disk", type=bool, default=False, help="when true, buffers image to disk")
+	args = parser.parse_args()
+
+	if args.out not in ['stdout', 'file']:
+		print("'out' argument must be either 'stdout' or 'file'")
+		return
+
+	p = OCR(args.pdf, args.page, args.loglevel, args.disk)
+	p.start()
+
+	if args.out == "file":
+		p.save_text()
+
+	else:
+		print(p.text)
+
+if __name__ == '__main__':
+	main()
