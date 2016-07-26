@@ -3,15 +3,17 @@ import io
 
 
 def main():
-	p = OCR("tests/ImageOnly.pdf", "INFO", "none")
+	p = OCR("tests/PlainText.pdf", "INFO", "none")
 	p.start()
 
-	against = ""
+	result = p.text.strip()
 
 	with io.open('tests/PlainText.txt') as f:
-		against = f.read()
+		against = f.read().strip()
 
-	assert(p.text == against)
+	assert(result == against)
+
+	print("Test passed.")
 
 
 if __name__ == '__main__':
